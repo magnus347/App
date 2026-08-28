@@ -7,7 +7,7 @@
  */
 import { el, modal, toast, icon, confirmDialog } from '../ui.js';
 import { CATEGORIES, UNITS, SUPPLIERS } from '../lib/domain.js';
-import { formatBarcode, originHint } from '../lib/barcode.js';
+import { formatBarcode, originHint, normalizeBarcode } from '../lib/barcode.js';
 import { saveProduct, deleteProduct, allProducts } from '../lib/db.js';
 
 /**
@@ -16,8 +16,10 @@ import { saveProduct, deleteProduct, allProducts } from '../lib/db.js';
  * `{ deleted: true }` ved sletting, eller null hvis brukeren avbrøt.
  */
 export async function openProductForm(product, { title } = {}) {
-  const isNew = !product.createdAt;
   const known = await allProducts();
+  // Varen er ny hvis strekkoden ikke ligger i registeret fra før. Feltene på
+  // objektet duger ikke som signal: et ferskt varekort har også createdAt.
+  const isNew = !known.some((p) => p.barcode === normalizeBarcode(product.barcode));
   // Foreslå leverandører og hylleplasser brukeren allerede har brukt.
   const suppliers = [...new Set([...SUPPLIERS, ...known.map((p) => p.supplier)])].filter(Boolean);
   const locations = [...new Set(known.map((p) => p.location))].filter(Boolean);

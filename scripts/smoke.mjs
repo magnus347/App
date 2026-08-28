@@ -44,6 +44,10 @@ check('ukjent kode åpner skjema for ny vare',
   (await page.locator('dialog h2').innerText()).includes('Ukjent strekkode'));
 check('strekkoden vises formatert i skjemaet',
   (await page.locator('dialog').innerText()).includes('7 038010 000188'));
+check('ny vare merkes som ny, ikke som registrert',
+  (await page.locator('dialog').innerText()).includes('Ny strekkode'));
+check('ny vare har ingen slett-knapp',
+  (await page.locator('dialog button:has-text("Slett vare")').count()) === 0);
 
 await page.fill('#f-name', 'Lettmelk 1L Tine');
 await page.fill('#f-desc', 'Kjølevare til kantina');
@@ -119,6 +123,20 @@ await page.click('dialog button:has-text("+1 inn")');
 await page.waitForTimeout(300);
 check('hurtigknapp oppdaterer beholdning til 6',
   (await page.locator('.list li .qty').innerText()).startsWith('6'));
+
+/* --- 7b. Redigering av kjent vare ---------------------------------- */
+await page.click('.list li');
+await page.waitForSelector('dialog[open]');
+await page.click('dialog button:has-text("Rediger")');
+await page.waitForTimeout(300);
+const redigerTekst = await page.locator('dialog').last().innerText();
+check('kjent vare merkes som registrert', redigerTekst.includes('Registrert strekkode'));
+check('kjent vare kan slettes',
+  (await page.locator('dialog button:has-text("Slett vare")').count()) === 1);
+await page.locator('dialog button:has-text("Avbryt")').last().click();
+await page.waitForTimeout(200);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(300);
 
 /* --- 8. Bestillingsliste ------------------------------------------ */
 await page.click('.tabbar a[href="#/bestilling"]');
