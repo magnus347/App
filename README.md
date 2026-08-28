@@ -81,13 +81,22 @@ sikkerhetskopi med beholdning og historikk.
 ## Tester
 
 ```bash
-npm test                 # 63 enhetstester: strekkoder, domenelogikk, database, CSV
-node scripts/smoke.mjs   # ende-til-ende i ekte nettleser med falskt kamera
+npm test                          # 63 enhetstester: strekkoder, domenelogikk, database, CSV
+node scripts/smoke.mjs            # ende-til-ende i ekte nettleser
+node scripts/kamera-test.mjs      # dekoding fra kamera (ZXing-veien, som på iPhone)
+node scripts/kamera-test.mjs --nativ   # dekoding via innebygd BarcodeDetector (Android)
 ```
 
 Røyktesten går gjennom hele flyten: ukjent strekkode → nytt varekort → inn med
 kolli → gjenkjenning → ut → telling → bestillingsliste → angring → eksport →
 omstart med data i behold.
+
+Kameratesten tegner en ekte EAN-13-strekkode, pakker den som en videofil og
+mater den inn som kamera i nettleseren. Da blir selve dekodingen testet, ikke
+bare skjemaflyten. Begge dekodingsveier dekkes: ZXing (Safari på iPhone) og
+nettleserens innebygde `BarcodeDetector` (Chrome på Android).
+
+Testene krever Playwright med Chromium (`npx playwright install chromium`).
 
 ## Prosjektstruktur
 
