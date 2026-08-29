@@ -70,6 +70,14 @@ describe('originHint', () => {
   it('returnerer null for interne koder', () => {
     expect(originHint('INT-ABC')).toBe(null);
   });
+  it('gjetter ikke opprinnelse for EAN-8', () => {
+    // Nullpadding til 13 siffer ville feilaktig gitt «USA/Canada».
+    expect(originHint('00004091')).toBe(null);
+    expect(originHint('96385074')).toBe(null);
+  });
+  it('utvider gyldig UPC-A og gjenkjenner den', () => {
+    expect(originHint('036000291452')).toBe('USA/Canada');
+  });
 });
 
 describe('makeInternalBarcode', () => {

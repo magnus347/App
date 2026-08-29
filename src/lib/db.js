@@ -6,7 +6,7 @@ import { newProduct, applyMovement, round3 } from './domain.js';
 import { normalizeBarcode } from './barcode.js';
 
 export const DB_NAME = 'varelager';
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -29,6 +29,12 @@ export function openDb(indexedDBImpl = globalThis.indexedDB) {
         }
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'key' });
+        }
+        // Versjon 2: oppslagsregister over kjente strekkoder. Ligger adskilt
+        // fra `products` slik at varelageret bare inneholder varer man
+        // faktisk fører beholdning på.
+        if (!db.objectStoreNames.contains('catalog')) {
+          db.createObjectStore('catalog', { keyPath: 'barcode' });
         }
         void e;
       };
@@ -209,6 +215,52 @@ export async function getSetting(key, fallback = null) {
 export async function setSetting(key, value) {
   await tx(['settings'], 'readwrite', (t) => wrap(t.objectStore('settings').put({ key, value })));
   return value;
+}
+
+/* --------------------------------------------- oppslagsregister (katalog) */
+
+/** Slår opp en strekkode i oppslagsregisteret. */
+export async function lookupCatalog(barcode) {
+  const code = normalizeBarcode(barcode);
+  if (!code) return null;
+  const db = await openDb();
+  if (!db.objectStoreNames.contains('catalog')) return null;
+  return tx(['catalog'], 'readonly', (t) => wrap(t.objectStore('catalog').get(code)));
+}
+
+/** Antall oppføringer i oppslagsregisteret. */
+export async function catalogCount() {
+  const db = await openDb();
+  if (!db.objectStoreNames.contains('catalog')) return 0;
+  return tx(['catalog'], 'readonly', (t) => wrap(t.objectStore('catalog').count()));
+}
+
+/**
+ * Skriver oppføringer til oppslagsregisteret. Skrives i porsjoner slik at
+ * nettleseren ikke blokkeres av én diger transaksjon.
+ */
+export async function putCatalog(entries, { chunkSize = 2000, onProgress } = {}) {
+  let skrevet = 0;
+  for (let i = 0; i < entries.length; i += chunkSize) {
+    const del = entries.slice(i, i + chunkSize);
+    await tx(['catalog'], 'readwrite', (t) => {
+      const store = t.objectStore('catalog');
+      for (const e of del) {
+        const code = normalizeBarcode(e.barcode);
+        if (code) store.put({ ...e, barcode: code });
+      }
+    });
+    skrevet += del.length;
+    onProgress?.(Math.min(skrevet, entries.length), entries.length);
+  }
+  return skrevet;
+}
+
+/** Tømmer oppslagsregisteret. */
+export async function clearCatalog() {
+  const db = await openDb();
+  if (!db.objectStoreNames.contains('catalog')) return;
+  await tx(['catalog'], 'readwrite', (t) => wrap(t.objectStore('catalog').clear()));
 }
 
 /* ------------------------------------------------- sikkerhetskopiering */

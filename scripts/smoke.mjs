@@ -7,6 +7,8 @@ import { chromium } from 'playwright';
 import { createServer } from 'vite';
 
 const shots = [];
+// En ekte kode fra varedatabasen, brukt for å teste oppslaget.
+const KJENT_KODE = '00004091';
 let failures = 0;
 
 function check(name, ok, extra = '') {
@@ -165,6 +167,35 @@ const dl = page.waitForEvent('download');
 await page.click('button:has-text("Eksporter")');
 const fil = await dl;
 check('CSV lastes ned', fil.suggestedFilename().startsWith('bevegelser_'));
+
+/* --- 10b. Varedatabase som oppslagsregister ----------------------- */
+await page.click('.tabbar a[href="#/innstillinger"]');
+await page.waitForTimeout(300);
+check('varedatabasen er ikke lastet inn fra start',
+  (await page.locator('main').innerText()).includes('Ikke lastet inn'));
+
+await page.click('button:has-text("Last inn varedatabasen")');
+await page.waitForFunction(
+  () => document.querySelector('main')?.innerText.includes('strekkoder lastet inn'),
+  null, { timeout: 90000 }
+);
+const katTekst = await page.locator('main').innerText();
+check('varedatabasen lastes inn', /[\d\s.,]+strekkoder lastet inn/.test(katTekst));
+
+// En kode som finnes i databasen, men ikke i varelageret, skal få navn foreslått.
+await page.click('.tabbar a[href="#/skann"]');
+await page.waitForTimeout(400);
+await page.fill('input[placeholder="Tast strekkode manuelt"]', KJENT_KODE);
+await page.press('input[placeholder="Tast strekkode manuelt"]', 'Enter');
+await page.waitForSelector('dialog[open]', { timeout: 15000 });
+const forslagTekst = await page.locator('dialog').innerText();
+check('ukjent vare får navn foreslått fra databasen',
+  forslagTekst.includes('funnet i varedatabasen') && forslagTekst.includes('Foreslått fra varedatabasen'));
+const foreslattNavn = await page.locator('#f-name').inputValue();
+check('navnefeltet er forhåndsutfylt', foreslattNavn.length > 0, `«${foreslattNavn}»`);
+shots.push(['databaseforslag', await page.screenshot()]);
+await page.locator('dialog button:has-text("Avbryt")').click();
+await page.waitForTimeout(300);
 
 /* --- 11. Innstillinger og sikkerhetskopi -------------------------- */
 await page.click('.tabbar a[href="#/innstillinger"]');

@@ -15,7 +15,7 @@ import { saveProduct, deleteProduct, allProducts } from '../lib/db.js';
  * `{ barcode }` for en helt ny vare. Returnerer den lagrede varen,
  * `{ deleted: true }` ved sletting, eller null hvis brukeren avbrøt.
  */
-export async function openProductForm(product, { title } = {}) {
+export async function openProductForm(product, { title, suggested = false } = {}) {
   const known = await allProducts();
   // Varen er ny hvis strekkoden ikke ligger i registeret fra før. Feltene på
   // objektet duger ikke som signal: et ferskt varekort har også createdAt.
@@ -98,7 +98,10 @@ export async function openProductForm(product, { title } = {}) {
           icon('skann'),
           el('div.grow', {},
             el('div', { style: 'font-weight:600' }, formatBarcode(product.barcode)),
-            el('div.small.muted', {}, isNew ? 'Ny strekkode – fyll ut så husker appen den' : 'Registrert strekkode')
+            el('div.small.muted', {},
+              suggested ? 'Foreslått fra varedatabasen – rett gjerne navnet'
+                : isNew ? 'Ny strekkode – fyll ut så husker appen den'
+                  : 'Registrert strekkode')
           ),
           hint && el('span.tag', {}, hint)
         )

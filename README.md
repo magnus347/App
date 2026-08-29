@@ -21,6 +21,7 @@ appen fungerer uten nett når den er lagt til på hjemskjermen.
 | **Historikk** | Full logg over alle bevegelser, med angrefunksjon og CSV-eksport. |
 | **Varer uten strekkode** | Får en intern kode (`INT-…`) og behandles ellers som alle andre varer. |
 | **Sikkerhetskopi** | JSON-eksport/-import for å flytte registeret mellom enheter, og CSV-import av varelister fra grossist eller regneark. |
+| **Varedatabase** | Oppslagsregister med 24 594 norske dagligvarer fra Open Food Facts. Skanner du en ukjent kode som finnes der, fylles varenavnet inn automatisk. Registeret er adskilt fra varelageret, så lagerlisten viser bare varer du faktisk fører beholdning på. |
 | **Offline** | Service worker cacher appen; alt fungerer i kjølerom uten dekning. |
 
 ## Kom i gang
@@ -67,6 +68,24 @@ fullskjerm og uten nett.
 Beholdning og logg skrives i samme IndexedDB-transaksjon, slik at de to aldri kan
 komme ut av synk.
 
+### Varedatabasen
+
+`public/data/norske-dagligvarer.csv` inneholder 24 594 norske dagligvarer med
+gyldig GS1-kontrollsiffer, hentet fra Open Food Facts. Den lastes inn fra
+*Mer → Varedatabase* og lagres i en egen tabell i IndexedDB.
+
+Filen regenereres slik:
+
+```bash
+curl -L -C - -o off.csv.gz \
+  https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz
+node scripts/hent-varedatabase.mjs public/data/norske-dagligvarer.csv off.csv.gz
+```
+
+Datasettet er ODbL-lisensiert. Se `data/KILDER.md` for vilkår, kjente
+kvalitetsbegrensninger, og hva man bør be grossister som Norengros om — deres
+sortiment finnes ikke i noen åpen kilde.
+
 ### Import av varelister
 
 CSV-import godtar norske kolonnenavn og matcher dem løst:
@@ -81,7 +100,7 @@ sikkerhetskopi med beholdning og historikk.
 ## Tester
 
 ```bash
-npm test                          # 63 enhetstester: strekkoder, domenelogikk, database, CSV
+npm test                          # 72 enhetstester: strekkoder, domenelogikk, database, katalog, CSV
 node scripts/smoke.mjs            # ende-til-ende i ekte nettleser
 node scripts/kamera-test.mjs      # dekoding fra kamera (ZXing-veien, som på iPhone)
 node scripts/kamera-test.mjs --nativ   # dekoding via innebygd BarcodeDetector (Android)
@@ -109,8 +128,10 @@ src/
   lib/db.js            IndexedDB: varer, bevegelser, innstillinger, eksport/import
   lib/scanner.js       kamera, BarcodeDetector med ZXing som reserve
   lib/csv.js           CSV inn og ut (semikolon, som norsk Excel forventer)
+  lib/catalog.js       oppslagsregister som foreslår varenavn ved ukjent kode
   views/               skann, lager, historikk, bestilling, innstillinger
 scripts/
+  hent-varedatabase.mjs uttrekk av norske varer fra Open Food Facts
   make-icons.mjs       genererer PNG-ikonene
   smoke.mjs            ende-til-ende-test
 ```
