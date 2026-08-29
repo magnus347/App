@@ -18,6 +18,10 @@ import { createInterface } from 'node:readline';
 
 const URL_CSV = 'https://static.openfoodfacts.org/data/en.openfoodfacts.org.products.csv.gz';
 const ut = process.argv[2] || 'norske-dagligvarer.csv';
+// Er datasettet allerede lastet ned, leses det fra disk. Nedlastingen er på
+// 1,3 GB og blir lett avbrutt, så det lønner seg å hente den én gang med
+// gjenopptakelse (curl -C -) og deretter kjøre filtreringen lokalt.
+const lokalFil = process.argv[3] || process.env.OFF_CSV_GZ || null;
 
 /** Kolonnene vi trenger, med navnet de har i eksportfilen. */
 const FELT = ['code', 'product_name', 'brands', 'quantity', 'countries_tags', 'categories_tags'];
@@ -30,8 +34,15 @@ function kategoriser(kategorier = '', navn = '') {
   return 'mat';
 }
 
-const res = await fetch(URL_CSV, { headers: { 'User-Agent': 'Varelager/1.0 (github.com/magnus347/App)' } });
-if (!res.ok) throw new Error(`Nedlasting feilet: HTTP ${res.status}`);
+let kilde;
+if (lokalFil) {
+  const { createReadStream } = await import('node:fs');
+  kilde = createReadStream(lokalFil);
+} else {
+  const res = await fetch(URL_CSV, { headers: { 'User-Agent': 'Varelager/1.0 (github.com/magnus347/App)' } });
+  if (!res.ok) throw new Error(`Nedlasting feilet: HTTP ${res.status}`);
+  kilde = Readable.fromWeb(res.body);
+}
 
 const utfil = createWriteStream(ut);
 utfil.write('strekkode;vare;beskrivelse;kategori;enhet;leverandor\r\n');
@@ -42,7 +53,7 @@ let idx = null;
 const sett = new Set();
 
 const linjer = createInterface({
-  input: Readable.fromWeb(res.body).pipe(createGunzip()),
+  input: kilde.pipe(createGunzip()),
   crlfDelay: Infinity,
 });
 
