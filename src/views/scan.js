@@ -8,6 +8,7 @@ import { normalizeBarcode, isStorableBarcode, formatBarcode } from '../lib/barco
 import { getProduct, registerMovement, undoMovement, getSetting, setSetting } from '../lib/db.js';
 import { newProduct, MOVEMENT_TYPES } from '../lib/domain.js';
 import { openProductForm } from './product-form.js';
+import { suggestFromCatalog } from '../lib/catalog.js';
 
 const MODES = [
   { id: 'inn', label: 'Inn', sub: 'Varemottak' },
@@ -156,7 +157,15 @@ export function scanView(app) {
   /** Ukjent strekkode: la brukeren beskrive varen én gang. */
   async function handleUnknown(code) {
     if (sound) beep(false);
-    const saved = await openProductForm(newProduct(code), { title: 'Ukjent strekkode – ny vare' });
+    // Er koden kjent i oppslagsregisteret, fylles navnet inn på forhånd.
+    const forslag = await suggestFromCatalog(code).catch(() => null);
+    const saved = await openProductForm(
+      newProduct(code, forslag || {}),
+      {
+        title: forslag ? 'Ny vare – funnet i varedatabasen' : 'Ukjent strekkode – ny vare',
+        suggested: Boolean(forslag),
+      }
+    );
     if (!saved || saved.deleted) {
       renderResult(el('div.card', {},
         el('div.row', {}, el('div.grow', {},

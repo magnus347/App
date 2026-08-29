@@ -5,6 +5,5 @@ dist/
 .vite/
 coverage/
 
-# Nedlastede råfiler fra Open Food Facts (regenereres med scripts/hent-varedatabase.mjs)
+# Rå nedlasting fra Open Food Facts (1,3 GB, hentes med curl ved behov)
 data/*.csv.gz
-data/norske-dagligvarer.csv

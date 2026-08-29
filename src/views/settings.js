@@ -4,6 +4,7 @@ import { allProducts, exportAll, importAll, recentMovements } from '../lib/db.js
 import { normalizeBarcode, isStorableBarcode, makeInternalBarcode } from '../lib/barcode.js';
 import { totalValue, CATEGORIES } from '../lib/domain.js';
 import { toCsv, fromCsv, download, stamp } from '../lib/csv.js';
+import { loadCatalog, catalogCount, clearCatalog } from '../lib/catalog.js';
 
 export function settingsView(app) {
   const info = el('div.stat-grid');
@@ -89,8 +90,64 @@ export function settingsView(app) {
     app.refreshAll();
   }
 
+  /* ------------------------------------------------- varedatabase */
+
+  const katStatus = el('div.small.muted');
+  const katKnapp = el('button.wide');
+
+  async function tegnKatalog() {
+    const n = await catalogCount();
+    katStatus.textContent = n
+      ? `${n.toLocaleString('nb-NO')} strekkoder lastet inn. Ukjente varer får navnet foreslått automatisk.`
+      : 'Ikke lastet inn. Last den ned én gang, så foreslår appen varenavn når du skanner ukjente koder.';
+    katKnapp.replaceChildren(n ? 'Oppdater varedatabasen' : 'Last inn varedatabasen');
+    katKnapp.className = n ? 'wide' : 'primary wide';
+    slettKnapp.classList.toggle('hidden', !n);
+  }
+
+  const slettKnapp = el('button.wide.small.ghost.hidden', {
+    onclick: async () => {
+      const ok = await confirmDialog('Fjerne varedatabasen?',
+        'Oppslagsregisteret slettes. Varelageret ditt røres ikke.', { okText: 'Fjern' });
+      if (!ok) return;
+      await clearCatalog();
+      toast('Varedatabasen er fjernet', 'ok');
+      await tegnKatalog();
+    },
+  }, 'Fjern varedatabasen');
+
+  katKnapp.onclick = async () => {
+    katKnapp.disabled = true;
+    try {
+      const antall = await loadCatalog({
+        onProgress: (gjort, totalt, fase) => {
+          katStatus.textContent = fase === 'lagrer' && totalt
+            ? `Lagrer ${gjort.toLocaleString('nb-NO')} av ${totalt.toLocaleString('nb-NO')} …`
+            : fase === 'henter' ? 'Henter varedatabasen …' : 'Leser filen …';
+        },
+      });
+      toast(`${antall.toLocaleString('nb-NO')} strekkoder lastet inn`, 'ok');
+    } catch (err) {
+      toast(err.message, 'err');
+    } finally {
+      katKnapp.disabled = false;
+      await tegnKatalog();
+    }
+  };
+
   const root = el('div.stack', {},
     el('div.card', {}, el('h2', {}, 'Status'), info),
+
+    el('div.card.stack', {},
+      el('h2', {}, 'Varedatabase'),
+      el('p.small.muted', { style: 'margin:0' },
+        'Et oppslagsregister over norske dagligvarer fra Open Food Facts. Det ligger adskilt fra varelageret ditt og brukes bare til å foreslå varenavn.'),
+      katStatus,
+      katKnapp,
+      slettKnapp,
+      el('p.small.muted', { style: 'margin:0' },
+        'Dekker mat og drikke. Forbruksmateriell og grossistsortiment må importeres fra leverandøren din.')
+    ),
 
     el('div.card.stack', {},
       el('h2', {}, 'Sikkerhetskopi'),
@@ -149,5 +206,12 @@ export function settingsView(app) {
   );
 
   reload();
-  return { root, refresh: reload };
+  tegnKatalog();
+  return {
+    root,
+    refresh: async () => {
+      await reload();
+      await tegnKatalog();
+    },
+  };
 }

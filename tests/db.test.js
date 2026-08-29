@@ -131,3 +131,57 @@ describe('eksport og import', () => {
     await expect(db.importAll({})).rejects.toThrow('ingen varer');
   });
 });
+
+describe('oppslagsregister', () => {
+  const oppf = [
+    { barcode: '7038010000188', name: 'Lettmelk 1L', brand: 'Tine', category: 'drikke' },
+    { barcode: ' 4006381333931 ', name: 'Toalettpapir 8pk', brand: 'X-tra', category: 'forbruk' },
+  ];
+
+  it('starter tomt', async () => {
+    expect(await db.catalogCount()).toBe(0);
+    expect(await db.lookupCatalog('7038010000188')).toBeUndefined();
+  });
+
+  it('lagrer og slår opp oppføringer', async () => {
+    await db.putCatalog(oppf);
+    expect(await db.catalogCount()).toBe(2);
+    expect((await db.lookupCatalog('7038010000188')).name).toBe('Lettmelk 1L');
+  });
+
+  it('normaliserer strekkoden ved lagring og oppslag', async () => {
+    await db.putCatalog(oppf);
+    expect((await db.lookupCatalog('4006381333931')).name).toBe('Toalettpapir 8pk');
+  });
+
+  it('skriver i porsjoner og melder framdrift', async () => {
+    const mange = Array.from({ length: 250 }, (_, i) => ({
+      barcode: String(1000000 + i), name: `Vare ${i}`,
+    }));
+    const framdrift = [];
+    await db.putCatalog(mange, { chunkSize: 100, onProgress: (g, t) => framdrift.push([g, t]) });
+    expect(await db.catalogCount()).toBe(250);
+    expect(framdrift).toEqual([[100, 250], [200, 250], [250, 250]]);
+  });
+
+  it('holdes adskilt fra varelageret', async () => {
+    await db.putCatalog(oppf);
+    expect(await db.allProducts()).toHaveLength(0);
+    await expect(db.registerMovement({ barcode: '7038010000188', type: 'inn', qty: 1 }))
+      .rejects.toThrow('Ukjent vare');
+  });
+
+  it('tømmes uten å røre varelageret', async () => {
+    await db.saveProduct(melk);
+    await db.putCatalog(oppf);
+    await db.clearCatalog();
+    expect(await db.catalogCount()).toBe(0);
+    expect(await db.allProducts()).toHaveLength(1);
+  });
+
+  it('overlever ikke som vare i sikkerhetskopien', async () => {
+    await db.putCatalog(oppf);
+    const dump = await db.exportAll();
+    expect(dump.products).toHaveLength(0);
+  });
+});

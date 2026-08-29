@@ -62,11 +62,15 @@ const GS1_PREFIX = [
   [200, 299, 'Intern/butikkode'],
 ];
 
-/** Grov opprinnelsesindikasjon ut fra GS1-prefiks – kun som hjelp ved registrering. */
+/**
+ * Grov opprinnelsesindikasjon ut fra GS1-prefiks – kun som hjelp ved
+ * registrering. Gjelder bare 13-sifrede koder: EAN-8 tildeles fra egne
+ * serier, så prefikstabellen under sier ingenting om dem.
+ */
 export function originHint(code) {
   const d = normalizeBarcode(code);
-  if (!/^\d{8,14}$/.test(d)) return null;
-  const c = d.length === 13 ? d : d.padStart(13, '0');
+  if (!/^\d{13}$/.test(d)) return null;
+  const c = d;
   const p2 = Number(c.slice(0, 2));
   const p3 = Number(c.slice(0, 3));
   if (p3 >= 200 && p3 <= 299) return 'Intern/butikkode';
