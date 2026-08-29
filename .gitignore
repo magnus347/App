@@ -4,3 +4,7 @@ dist/
 *.log
 .vite/
 coverage/
+
+# Nedlastede råfiler fra Open Food Facts (regenereres med scripts/hent-varedatabase.mjs)
+data/*.csv.gz
+data/norske-dagligvarer.csv
