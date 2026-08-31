@@ -185,3 +185,94 @@ describe('oppslagsregister', () => {
     expect(dump.products).toHaveLength(0);
   });
 });
+
+describe('sletting som gravstein', () => {
+  it('skjuler varen, men beholder den så slettingen kan spres', async () => {
+    await db.saveProduct(melk);
+    await db.deleteProduct(melk.barcode);
+    expect(await db.getProduct(melk.barcode)).toBeUndefined();
+    expect(await db.allProducts()).toHaveLength(0);
+
+    // Gravsteinen ligger igjen i tabellen, med tidspunkt.
+    const rå = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(db.DB_NAME, db.DB_VERSION);
+      req.onsuccess = () => {
+        const t = req.result.transaction(['products'], 'readonly');
+        const g = t.objectStore('products').get(melk.barcode);
+        g.onsuccess = () => resolve(g.result);
+        g.onerror = () => reject(g.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    expect(rå.deletedAt).toBeGreaterThan(0);
+    expect(rå.synced).toBe(false);
+  });
+
+  it('lar en slettet strekkode registreres på nytt', async () => {
+    await db.saveProduct(melk);
+    await db.deleteProduct(melk.barcode);
+    await db.saveProduct({ ...melk, name: 'Lettmelk igjen' });
+    const p = await db.getProduct(melk.barcode);
+    expect(p?.name).toBe('Lettmelk igjen');
+  });
+});
+
+describe('bevegelser for synkronisering', () => {
+  it('gir hver bevegelse en uid som er unik på tvers av enheter', async () => {
+    await db.saveProduct(melk);
+    const a = await db.registerMovement({ barcode: melk.barcode, type: 'inn', qty: 1 });
+    const b = await db.registerMovement({ barcode: melk.barcode, type: 'inn', qty: 1 });
+    expect(a.movement.uid).toBeTruthy();
+    expect(a.movement.uid).not.toBe(b.movement.uid);
+  });
+
+  it('markerer nye og angrede bevegelser som usendt', async () => {
+    await db.saveProduct(melk);
+    const { movement } = await db.registerMovement({ barcode: melk.barcode, type: 'inn', qty: 1 });
+    expect(movement.synced).toBe(false);
+    await db.undoMovement(movement.id);
+    const [etter] = await db.movementsFor(melk.barcode);
+    expect(etter.undone).toBe(true);
+    expect(etter.synced).toBe(false);
+  });
+});
+
+describe('oppgradering fra versjon 2', () => {
+  it('gir bevegelser uten uid en uid, uten å miste data', async () => {
+    globalThis.indexedDB = new IDBFactory();
+    db._resetDb();
+
+    // Bygg opp en versjon 2-database slik den så ut før synkronisering.
+    await new Promise((resolve, reject) => {
+      const req = indexedDB.open(db.DB_NAME, 2);
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        d.createObjectStore('products', { keyPath: 'barcode' });
+        const m = d.createObjectStore('movements', { keyPath: 'id', autoIncrement: true });
+        m.createIndex('barcode', 'barcode');
+        m.createIndex('ts', 'ts');
+        d.createObjectStore('settings', { keyPath: 'key' });
+        d.createObjectStore('catalog', { keyPath: 'barcode' });
+      };
+      req.onsuccess = () => {
+        const t = req.result.transaction(['products', 'movements'], 'readwrite');
+        t.objectStore('products').put({ ...melk, qty: 7, createdAt: 1, updatedAt: 1 });
+        t.objectStore('movements').add({ barcode: melk.barcode, type: 'inn', qty: 7, delta: 7, before: 0, after: 7, ts: 1000 });
+        t.objectStore('movements').add({ barcode: melk.barcode, type: 'ut', qty: 2, delta: -2, before: 7, after: 5, ts: 2000 });
+        t.oncomplete = () => {
+          req.result.close();
+          resolve();
+        };
+        t.onerror = () => reject(t.error);
+      };
+      req.onerror = () => reject(req.error);
+    });
+
+    // Åpning på versjon 3 skal migrere uten tap.
+    const bevegelser = await db.movementsFor(melk.barcode);
+    expect(bevegelser).toHaveLength(2);
+    expect(bevegelser.every((m) => typeof m.uid === 'string' && m.uid.length > 0)).toBe(true);
+    expect(new Set(bevegelser.map((m) => m.uid)).size).toBe(2);
+    expect((await db.getProduct(melk.barcode)).qty).toBe(7);
+  });
+});

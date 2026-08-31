@@ -5,6 +5,7 @@ import { normalizeBarcode, isStorableBarcode, makeInternalBarcode } from '../lib
 import { totalValue, CATEGORIES } from '../lib/domain.js';
 import { toCsv, fromCsv, download, stamp } from '../lib/csv.js';
 import { loadCatalog, catalogCount, clearCatalog } from '../lib/catalog.js';
+import { skyKort } from './sky.js';
 
 export function settingsView(app) {
   const info = el('div.stat-grid');
@@ -135,8 +136,11 @@ export function settingsView(app) {
     }
   };
 
+  const sky = skyKort(app);
+
   const root = el('div.stack', {},
     el('div.card', {}, el('h2', {}, 'Status'), info),
+    sky.kort,
 
     el('div.card.stack', {},
       el('h2', {}, 'Varedatabase'),
@@ -212,6 +216,7 @@ export function settingsView(app) {
     refresh: async () => {
       await reload();
       await tegnKatalog();
+      await sky.tegn();
     },
   };
 }

@@ -9,6 +9,7 @@ import { getProduct, registerMovement, undoMovement, getSetting, setSetting } fr
 import { newProduct, MOVEMENT_TYPES } from '../lib/domain.js';
 import { openProductForm } from './product-form.js';
 import { suggestFromCatalog } from '../lib/catalog.js';
+import { planleggSynk } from '../lib/sky.js';
 
 const MODES = [
   { id: 'inn', label: 'Inn', sub: 'Varemottak' },
@@ -238,6 +239,7 @@ export function scanView(app) {
       });
       renderResult(receipt(updated, movement));
       app.refreshBadges();
+      planleggSynk();
     } catch (err) {
       toast(err.message, 'err');
     }

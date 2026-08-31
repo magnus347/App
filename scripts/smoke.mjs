@@ -244,6 +244,37 @@ const backup = await dl2;
 check('sikkerhetskopi lastes ned', backup.suggestedFilename().endsWith('.json'));
 shots.push(['innstillinger', await page.screenshot()]);
 
+/* --- 11b. Skylagring: oppsett uten at appen krever det ------------- */
+await page.click('.tabbar a[href="#/innstillinger"]');
+await page.waitForTimeout(400);
+const skyTekst = await page.locator('main').innerText();
+check('skylagring vises som valgfritt', skyTekst.includes('Skylagring')
+  && skyTekst.includes('Appen fungerer like godt uten'));
+check('oppsettet spør etter prosjekt-URL og nøkkel',
+  (await page.locator('input[placeholder="https://xxxx.supabase.co"]').count()) === 1
+  && (await page.locator('input[placeholder="anon public key"]').count()) === 1);
+check('advarer mot service_role-nøkkelen', skyTekst.includes('service_role'));
+
+// Oppsettet skal lagres og lede videre til innlogging, uten å kontakte nett.
+await page.fill('input[placeholder="https://xxxx.supabase.co"]', 'https://eksempel.supabase.co');
+await page.fill('input[placeholder="anon public key"]', 'test-anon-key');
+await page.click('button:has-text("Lagre oppsett")');
+await page.waitForTimeout(1200);
+const innloggTekst = await page.locator('main').innerText();
+check('oppsettet fører til innlogging', innloggTekst.includes('Logg inn'));
+check('vikar kan bli med med lagerkode',
+  innloggTekst.includes('bli med som vikar')
+  && (await page.locator('input[placeholder="Lagerkode fra sjefen"]').count()) === 1);
+shots.push(['sky-innlogging', await page.screenshot()]);
+
+// Kobles skyen fra, skal appen være som før.
+await page.click('button:has-text("Endre prosjektoppsett")');
+await page.waitForSelector('dialog[open]');
+await page.click('dialog button:has-text("Endre")');
+await page.waitForTimeout(800);
+check('skylagring kan kobles fra igjen',
+  (await page.locator('input[placeholder="https://xxxx.supabase.co"]').count()) === 1);
+
 /* --- 12. Data overlever omstart ----------------------------------- */
 await page.reload({ waitUntil: 'networkidle' });
 await page.click('.tabbar a[href="#/lager"]');

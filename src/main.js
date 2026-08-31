@@ -3,6 +3,7 @@ import './styles.css';
 import { el, icon, replace, toast } from './ui.js';
 import { allProducts } from './lib/db.js';
 import { isLowStock } from './lib/domain.js';
+import { planleggSynk } from './lib/sky.js';
 import { scanView } from './views/scan.js';
 import { inventoryView } from './views/inventory.js';
 import { historyView } from './views/history.js';
@@ -85,10 +86,15 @@ function boot() {
   );
 
   window.addEventListener('hashchange', route);
-  window.addEventListener('online', () => status.textContent = 'Lokalt lagret');
+  window.addEventListener('online', () => {
+    status.textContent = 'Lokalt lagret';
+    // Kom nettet tilbake, sendes det som ble registrert i mellomtiden.
+    planleggSynk({ onFerdig: refreshAll, forsinkelse: 1000 });
+  });
   window.addEventListener('offline', () => status.textContent = 'Offline – alt fungerer');
 
   route();
+  planleggSynk({ onFerdig: refreshAll, forsinkelse: 1500 });
 
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
     window.addEventListener('load', () => {

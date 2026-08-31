@@ -22,6 +22,7 @@ appen fungerer uten nett når den er lagt til på hjemskjermen.
 | **Varer uten strekkode** | Får en intern kode (`INT-…`) og behandles ellers som alle andre varer. |
 | **Sikkerhetskopi** | JSON-eksport/-import for å flytte registeret mellom enheter, og CSV-import av varelister fra grossist eller regneark. |
 | **Varedatabase** | Oppslagsregister med 24 594 norske dagligvarer fra Open Food Facts. Skanner du en ukjent kode som finnes der, fylles varenavnet inn automatisk. Registeret er adskilt fra varelageret, så lagerlisten viser bare varer du faktisk fører beholdning på. |
+| **Skylagring** | Valgfri synkronisering mot Supabase, så samme lager vises på flere enheter. Personlige kontoer for faste ansatte, delt lagerkode for vikarer. Appen er fortsatt offline-first: registreringer skrives lokalt først og sendes når det er dekning. |
 | **Offline** | Service worker cacher appen; alt fungerer i kjølerom uten dekning. |
 
 ## Kom i gang
@@ -86,6 +87,32 @@ Datasettet er ODbL-lisensiert. Se `data/KILDER.md` for vilkår, kjente
 kvalitetsbegrensninger, og hva man bør be grossister som Norengros om — deres
 sortiment finnes ikke i noen åpen kilde.
 
+### Skylagring
+
+Skru på under *Mer → Skylagring*. Krever et Supabase-prosjekt:
+
+1. Opprett prosjekt på [supabase.com](https://supabase.com), gjerne i EU-region.
+2. Kjør `supabase/schema.sql` i SQL Editor.
+3. Lim inn prosjekt-URL og **anon**-nøkkel i appen. Aldri `service_role`.
+4. Skal vikarer kunne bli med med lagerkode, må anonym innlogging slås på under
+   *Authentication → Providers* i Supabase.
+
+Beholdningen lagres aldri som et tall i skyen. Den regnes ut fra
+bevegelsesloggen, slik at to enheter som hver fører «ut 1» begge trekkes fra i
+stedet for at den ene overskriver den andre. `src/lib/sync-logic.js` inneholder
+reglene, med tester som bekrefter at resultatet blir likt uansett hvilken enhet
+som flettet.
+
+Tilgangsstyringen ligger i databasen (Row Level Security), ikke i appen:
+
+```bash
+bash scripts/test-skjema.sh   # kjører skjemaet mot ekte Postgres
+```
+
+Testen verifiserer at en utenforstående ser null rader, at innløst lagerkode gir
+tilgang, at vikarer ikke kan slette varer, og at ført historikk ikke kan skrives
+om – bare angres.
+
 ### Import av varelister
 
 CSV-import godtar norske kolonnenavn og matcher dem løst:
@@ -100,7 +127,7 @@ sikkerhetskopi med beholdning og historikk.
 ## Tester
 
 ```bash
-npm test                          # 72 enhetstester: strekkoder, domenelogikk, database, katalog, CSV
+npm test                          # 103 enhetstester: strekkoder, domene, database, katalog, CSV, fletting
 node scripts/smoke.mjs            # ende-til-ende i ekte nettleser
 node scripts/kamera-test.mjs      # dekoding fra kamera (ZXing-veien, som på iPhone)
 node scripts/kamera-test.mjs --nativ   # dekoding via innebygd BarcodeDetector (Android)
@@ -129,6 +156,8 @@ src/
   lib/scanner.js       kamera, BarcodeDetector med ZXing som reserve
   lib/csv.js           CSV inn og ut (semikolon, som norsk Excel forventer)
   lib/catalog.js       oppslagsregister som foreslår varenavn ved ukjent kode
+  lib/sync-logic.js    ren flettelogikk: beholdning regnes fra bevegelsesloggen
+  lib/sky.js           Supabase: innlogging, lager og synkronisering
   views/               skann, lager, historikk, bestilling, innstillinger
 scripts/
   hent-varedatabase.mjs uttrekk av norske varer fra Open Food Facts

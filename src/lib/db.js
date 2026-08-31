@@ -3,12 +3,20 @@
  * uten nett ute i lageret.
  */
 import { newProduct, applyMovement, round3 } from './domain.js';
+import { foldMovements } from './sync-logic.js';
 import { normalizeBarcode } from './barcode.js';
 
 export const DB_NAME = 'varelager';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 let dbPromise = null;
+
+/** Identifikator som er unik på tvers av enheter. */
+export function nyUid() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  // Reserve for eldre nettlesere og testmiljø uten Web Crypto.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 export function openDb(indexedDBImpl = globalThis.indexedDB) {
   if (!dbPromise) {
@@ -36,7 +44,22 @@ export function openDb(indexedDBImpl = globalThis.indexedDB) {
         if (!db.objectStoreNames.contains('catalog')) {
           db.createObjectStore('catalog', { keyPath: 'barcode' });
         }
-        void e;
+        // Versjon 3: forbereder synkronisering mellom enheter.
+        //
+        // Bevegelser har hatt et løpenummer som bare er unikt på denne
+        // enheten. To telefoner ville laget id 1, 2, 3 hver for seg og
+        // overskrevet hverandre i skyen, så hver bevegelse får en uid som er
+        // unik på tvers av enheter.
+        if (e.oldVersion < 3 && db.objectStoreNames.contains('movements')) {
+          const store = req.transaction.objectStore('movements');
+          if (!store.indexNames.contains('uid')) store.createIndex('uid', 'uid', { unique: true });
+          store.openCursor().onsuccess = (ev) => {
+            const cursor = ev.target.result;
+            if (!cursor) return;
+            if (!cursor.value.uid) cursor.update({ ...cursor.value, uid: nyUid() });
+            cursor.continue();
+          };
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -86,14 +109,17 @@ function wrap(request) {
 export async function getProduct(barcode) {
   const code = normalizeBarcode(barcode);
   if (!code) return null;
-  return tx(['products'], 'readonly', (t) => wrap(t.objectStore('products').get(code)));
+  const p = await tx(['products'], 'readonly', (t) => wrap(t.objectStore('products').get(code)));
+  return p && p.deletedAt ? undefined : p;
 }
 
 export async function allProducts() {
   const list = await tx(['products'], 'readonly', (t) =>
     wrap(t.objectStore('products').getAll())
   );
-  return list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'nb'));
+  return list
+    .filter((p) => !p.deletedAt)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'nb'));
 }
 
 export async function saveProduct(product) {
@@ -109,6 +135,7 @@ export async function saveProduct(product) {
     minQty: Number(product.minQty) || 0,
     price: product.price === '' || product.price == null ? null : Number(product.price),
     updatedAt: Date.now(),
+    synced: false,
   };
   // Beholdningen styres kun av bevegelser, aldri av skjemaet.
   record.qty = existing ? existing.qty : Number(product.qty) || 0;
@@ -116,10 +143,18 @@ export async function saveProduct(product) {
   return record;
 }
 
+/**
+ * Sletter en vare. Varekortet beholdes som gravstein med `deletedAt` slik at
+ * slettingen kan spres til andre enheter – uten den ville varen kommet
+ * tilbake ved neste synkronisering.
+ */
 export async function deleteProduct(barcode) {
   const code = normalizeBarcode(barcode);
   await tx(['products', 'movements'], 'readwrite', async (t) => {
-    t.objectStore('products').delete(code);
+    const store = t.objectStore('products');
+    const p = await wrap(store.get(code));
+    const ts = Date.now();
+    if (p) store.put({ ...p, deletedAt: ts, updatedAt: ts, synced: false });
     const idx = t.objectStore('movements').index('barcode');
     const keys = await wrap(idx.getAllKeys(IDBKeyRange.only(code)));
     for (const k of keys) t.objectStore('movements').delete(k);
@@ -145,6 +180,7 @@ export async function registerMovement({ barcode, type, qty, asPack = false, not
     store.put(updated);
 
     const movement = {
+      uid: nyUid(),
       barcode: code,
       name: product.name,
       type,
@@ -154,6 +190,7 @@ export async function registerMovement({ barcode, type, qty, asPack = false, not
       after,
       note,
       ts,
+      synced: false,
     };
     const id = await wrap(t.objectStore('movements').add(movement));
     return { product: updated, movement: { ...movement, id } };
@@ -200,7 +237,7 @@ export async function undoMovement(id) {
     const after = round3((Number(product.qty) || 0) - m.delta);
     const ts = Date.now();
     pStore.put({ ...product, qty: after, updatedAt: ts });
-    mStore.put({ ...m, undone: true, undoneAt: ts });
+    mStore.put({ ...m, undone: true, undoneAt: ts, synced: false });
     return after;
   });
 }
@@ -261,6 +298,93 @@ export async function clearCatalog() {
   const db = await openDb();
   if (!db.objectStoreNames.contains('catalog')) return;
   await tx(['catalog'], 'readwrite', (t) => wrap(t.objectStore('catalog').clear()));
+}
+
+/* -------------------------------------------------------- synkronisering */
+
+/** Alle varekort, også gravsteiner – skyen trenger å vite om slettinger. */
+export async function alleVarerRå() {
+  return tx(['products'], 'readonly', (t) => wrap(t.objectStore('products').getAll()));
+}
+
+/** Varekort som ennå ikke er sendt til skyen. */
+export async function usyncedeVarer() {
+  return (await alleVarerRå()).filter((p) => p.synced !== true);
+}
+
+/** Bevegelser som ennå ikke er sendt til skyen. */
+export async function usyncedeBevegelser() {
+  const alle = await tx(['movements'], 'readonly', (t) => wrap(t.objectStore('movements').getAll()));
+  return alle.filter((m) => m.synced !== true);
+}
+
+/** Alle bevegelser, brukt når beholdningen skal regnes ut på nytt. */
+export async function alleBevegelser() {
+  return tx(['movements'], 'readonly', (t) => wrap(t.objectStore('movements').getAll()));
+}
+
+/**
+ * Skriver inn det skyen har, og regner beholdningen ut på nytt fra den
+ * flettede loggen. Alt skjer i én transaksjon, slik at en avbrutt
+ * synkronisering ikke etterlater halve tilstanden.
+ */
+export async function anvendFraSky({ varer = [], bevegelser = [], nyeUids = [] }) {
+  return tx(['products', 'movements'], 'readwrite', async (t) => {
+    const pStore = t.objectStore('products');
+    const mStore = t.objectStore('movements');
+
+    for (const p of varer) {
+      const kode = normalizeBarcode(p.barcode);
+      if (!kode) continue;
+      const finnes = await wrap(pStore.get(kode));
+      // Nyeste endring vinner. Er den lokale nyere, står den urørt.
+      if (finnes && Number(finnes.updatedAt) > Number(p.updatedAt)) continue;
+      pStore.put({ ...newProduct(kode), ...finnes, ...p, barcode: kode, synced: true });
+    }
+
+    const uidIndex = mStore.index('uid');
+    for (const m of bevegelser) {
+      const finnes = await wrap(uidIndex.get(m.uid));
+      if (finnes) {
+        // Angring er det eneste som kan endres på en ført bevegelse.
+        if (m.undone && !finnes.undone) mStore.put({ ...finnes, undone: true, synced: true });
+        else if (!finnes.synced) mStore.put({ ...finnes, synced: true });
+      } else {
+        const { id, ...uten } = m;
+        void id;
+        mStore.add({ ...uten, synced: true });
+      }
+    }
+
+    // Marker som sendt det vi selv lastet opp.
+    for (const uid of nyeUids) {
+      const egen = await wrap(uidIndex.get(uid));
+      if (egen && !egen.synced) mStore.put({ ...egen, synced: true });
+    }
+
+    // Beholdningen regnes fra loggen, aldri fra et tall skyen sendte.
+    const alleBev = await wrap(mStore.getAll());
+    const perVare = new Map();
+    for (const m of alleBev) {
+      if (!perVare.has(m.barcode)) perVare.set(m.barcode, []);
+      perVare.get(m.barcode).push(m);
+    }
+    for (const p of await wrap(pStore.getAll())) {
+      const qty = foldMovements(perVare.get(p.barcode) || []);
+      if (qty !== p.qty) pStore.put({ ...p, qty });
+    }
+  });
+}
+
+/** Merker varekort som sendt til skyen. */
+export async function markerVarerSendt(barcodes) {
+  await tx(['products'], 'readwrite', async (t) => {
+    const store = t.objectStore('products');
+    for (const b of barcodes) {
+      const p = await wrap(store.get(normalizeBarcode(b)));
+      if (p) store.put({ ...p, synced: true });
+    }
+  });
 }
 
 /* ------------------------------------------------- sikkerhetskopiering */
