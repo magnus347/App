@@ -181,6 +181,17 @@ export function skyKort(app) {
         }, detteLager.delt_kode ? 'Endre lagerkode' : 'Lag lagerkode')
       ) : null,
 
+      valgt ? el('button.ghost.wide.small', {
+        onclick: async () => {
+          const ok = await confirmDialog('Hente hele lageret på nytt?',
+            'Neste synkronisering henter alt fra skyen i stedet for bare endringer. Bruk det hvis noe ser feil ut.',
+            { okText: 'Hent alt' });
+          if (!ok) return;
+          await sky.hentAltPåNytt();
+          toast('Neste synkronisering henter alt', 'ok');
+        },
+      }, 'Hent hele lageret på nytt') : null,
+
       el('button.ghost.wide.small', {
         onclick: async () => {
           await sky.loggUt();

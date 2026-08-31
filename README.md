@@ -97,6 +97,12 @@ Skru på under *Mer → Skylagring*. Krever et Supabase-prosjekt:
 4. Skal vikarer kunne bli med med lagerkode, må anonym innlogging slås på under
    *Authentication → Providers* i Supabase.
 
+Synkroniseringen henter bare det som er endret siden sist. Målt mot ekte
+Postgres tar en bevegelse 212 byte med indekser, så 100 000 bevegelser er
+20 MB - hentet i sin helhet ved hver synkronisering ville det brukt opp
+trafikkvoten på gratisnivået i løpet av dager. Merket settes fra serverens
+tidsstempler, aldri fra enhetens klokke, og går aldri bakover.
+
 Beholdningen lagres aldri som et tall i skyen. Den regnes ut fra
 bevegelsesloggen, slik at to enheter som hver fører «ut 1» begge trekkes fra i
 stedet for at den ene overskriver den andre. `src/lib/sync-logic.js` inneholder
@@ -127,7 +133,7 @@ sikkerhetskopi med beholdning og historikk.
 ## Tester
 
 ```bash
-npm test                          # 103 enhetstester: strekkoder, domene, database, katalog, CSV, fletting
+npm test                          # 108 enhetstester: strekkoder, domene, database, katalog, CSV, fletting
 node scripts/smoke.mjs            # ende-til-ende i ekte nettleser
 node scripts/kamera-test.mjs      # dekoding fra kamera (ZXing-veien, som på iPhone)
 node scripts/kamera-test.mjs --nativ   # dekoding via innebygd BarcodeDetector (Android)

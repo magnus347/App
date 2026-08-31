@@ -6,6 +6,7 @@ import { totalValue, CATEGORIES } from '../lib/domain.js';
 import { toCsv, fromCsv, download, stamp } from '../lib/csv.js';
 import { loadCatalog, catalogCount, clearCatalog } from '../lib/catalog.js';
 import { skyKort } from './sky.js';
+import { hentAltPåNytt } from '../lib/sky.js';
 
 export function settingsView(app) {
   const info = el('div.stat-grid');
@@ -201,6 +202,9 @@ export function settingsView(app) {
             { okText: 'Slett alt', danger: true });
           if (!ok) return;
           await importAll({ products: [] }, { mode: 'replace' });
+          // Uten dette ville enheten trodd den var à jour og aldri hentet
+          // lageret ned igjen fra skyen.
+          await hentAltPåNytt();
           toast('Alle data er slettet', 'ok');
           await reload();
           app.refreshAll();

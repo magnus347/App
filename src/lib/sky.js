@@ -9,6 +9,7 @@ import {
   usyncedeVarer, usyncedeBevegelser, anvendFraSky, markerVarerSendt,
   getSetting, setSetting,
 } from './db.js';
+import { nyesteMerke } from './sync-logic.js';
 
 let klientLøfte = null;
 let klientNøkkel = '';
@@ -218,12 +219,34 @@ export async function synkroniser({ onStatus } = {}) {
     if (error) throw new Error(oversettFeil(error));
   }
 
-  // 2. Hent alt som finnes i skyen for dette lageret.
+  // 2. Hent bare det som er endret siden sist.
+  //
+  // Å hente hele loggen hver gang koster trafikk som vokser med lageret:
+  // 100 000 bevegelser er 20 MB, og med automatisk synkronisering ville
+  // månedskvoten gått med på noen dager.
   onStatus?.('Henter fra skyen …');
-  const { data: varerRader, error: vFeil } = await c.from('varer').select('*').eq('lager_id', lagerId);
+  const forrige = await getSetting('synkMerke', null);
+  // Et minutts margin, slik at rader skrevet mens forrige synkronisering
+  // pågikk ikke faller mellom to stoler.
+  const siden = forrige ? new Date(new Date(forrige).getTime() - 60_000).toISOString() : null;
+
+  let varerSpørring = c.from('varer').select('*').eq('lager_id', lagerId);
+  let bevSpørring = c.from('bevegelser').select('*').eq('lager_id', lagerId);
+  if (siden) {
+    varerSpørring = varerSpørring.gt('updated_at', siden);
+    bevSpørring = bevSpørring.gt('endret_at', siden);
+  }
+
+  const { data: varerRader, error: vFeil } = await varerSpørring;
   if (vFeil) throw new Error(oversettFeil(vFeil));
-  const { data: bevRader, error: bFeil } = await c.from('bevegelser').select('*').eq('lager_id', lagerId);
+  const { data: bevRader, error: bFeil } = await bevSpørring;
   if (bFeil) throw new Error(oversettFeil(bFeil));
+
+  // Nytt merke settes fra serverens egne tidsstempler, ikke enhetens klokke.
+  const nyttMerke = nyesteMerke(
+    bevRader, 'endret_at',
+    nyesteMerke(varerRader, 'updated_at', forrige)
+  );
 
   // 3. Flett inn og regn beholdningen på nytt fra loggen.
   onStatus?.('Fletter …');
@@ -233,6 +256,7 @@ export async function synkroniser({ onStatus } = {}) {
     nyeUids,
   });
   await markerVarerSendt(lokaleVarer.map((p) => p.barcode));
+  if (nyttMerke) await setSetting('synkMerke', nyttMerke);
   await setSetting('sistSynk', Date.now());
 
   return {
@@ -267,6 +291,15 @@ export function planleggSynk({ onFerdig, forsinkelse = 3000 } = {}) {
 
 export async function sistSynkronisert() {
   return getSetting('sistSynk', null);
+}
+
+/**
+ * Glemmer hvor langt vi har kommet, slik at neste synkronisering henter alt
+ * på nytt. Brukes når en enhet skal hente hele lageret, eller om noe har
+ * kommet ut av synk.
+ */
+export async function hentAltPåNytt() {
+  await setSetting('synkMerke', null);
 }
 
 /** Gjør Supabase-feil om til noe som er til å forstå. */

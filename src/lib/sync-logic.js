@@ -65,6 +65,23 @@ export function mergeMovements(lokale, eksterne) {
   return sortMovements([...kart.values()]);
 }
 
+/**
+ * Nyeste tidsstempel blant radene vi hentet, brukt som merke for neste
+ * synkronisering. Tidsstemplene kommer fra serveren, aldri fra enhetens
+ * klokke – en telefon som går feil ville ellers hoppet over endringer.
+ * Hentet vi ingenting, står merket urørt.
+ */
+export function nyesteMerke(rader, felt, forrige = null) {
+  let nyeste = null;
+  for (const r of rader || []) {
+    const v = r?.[felt];
+    if (v && (nyeste === null || String(v) > String(nyeste))) nyeste = v;
+  }
+  if (nyeste === null) return forrige;
+  if (forrige && String(forrige) > String(nyeste)) return forrige;
+  return nyeste;
+}
+
 /** Bevegelser som ennå ikke er sendt til skyen. */
 export function usyncede(movements) {
   return movements.filter((m) => !m.synced);

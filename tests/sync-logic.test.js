@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   sortMovements, foldMovements, mergeProduct, mergeMovements, usyncede, flettTilstand,
+  nyesteMerke,
 } from '../src/lib/sync-logic.js';
 
 const m = (id, ts, type, qty, extra = {}) => ({ id, ts, type, qty, barcode: '111', ...extra });
@@ -88,6 +89,36 @@ describe('mergeProduct', () => {
     const p = { barcode: '111', updatedAt: 1 };
     expect(mergeProduct(null, p)).toBe(p);
     expect(mergeProduct(p, null)).toBe(p);
+  });
+});
+
+describe('nyesteMerke', () => {
+  const rad = (t) => ({ endret_at: t });
+
+  it('finner nyeste tidsstempel', () => {
+    expect(nyesteMerke([rad('2026-01-01T10:00:00Z'), rad('2026-01-02T09:00:00Z')], 'endret_at'))
+      .toBe('2026-01-02T09:00:00Z');
+  });
+
+  it('beholder forrige merke når ingenting ble hentet', () => {
+    expect(nyesteMerke([], 'endret_at', '2026-01-01T00:00:00Z')).toBe('2026-01-01T00:00:00Z');
+    expect(nyesteMerke(null, 'endret_at', '2026-01-01T00:00:00Z')).toBe('2026-01-01T00:00:00Z');
+  });
+
+  it('går aldri bakover i tid', () => {
+    // Et merke som krøp bakover ville fått enheten til å hente det samme
+    // om og om igjen, og trafikken ville vokst i stedet for å krympe.
+    expect(nyesteMerke([rad('2026-01-01T00:00:00Z')], 'endret_at', '2026-06-01T00:00:00Z'))
+      .toBe('2026-06-01T00:00:00Z');
+  });
+
+  it('returnerer null uten rader og uten forrige merke', () => {
+    expect(nyesteMerke([], 'endret_at')).toBe(null);
+  });
+
+  it('hopper over rader som mangler feltet', () => {
+    expect(nyesteMerke([{}, rad('2026-03-03T00:00:00Z'), {}], 'endret_at'))
+      .toBe('2026-03-03T00:00:00Z');
   });
 });
 

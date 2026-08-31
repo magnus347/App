@@ -55,11 +55,18 @@ create table if not exists public.bevegelser (
   ts         bigint not null,            -- millisekunder, samme klokke som appen
   undone     boolean not null default false,
   utfort_av  uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Oppdateres ved angring, slik at enheter kan hente bare det som er
+  -- endret siden sist framfor hele loggen. created_at duger ikke: den
+  -- endrer seg ikke når en bevegelse angres.
+  endret_at  timestamptz not null default now()
 );
 
 create index if not exists bevegelser_lager_ts_idx on public.bevegelser (lager_id, ts);
+create index if not exists bevegelser_endret_idx on public.bevegelser (lager_id, endret_at);
 create index if not exists varer_lager_oppdatert_idx on public.varer (lager_id, updated_at);
+
+alter table public.bevegelser add column if not exists endret_at timestamptz not null default now();
 
 -- ------------------------------------------------------------- hjelpere
 --
@@ -224,6 +231,7 @@ begin
      or new.type <> old.type or new.antall <> old.antall or new.ts <> old.ts then
     raise exception 'Bevegelser kan ikke endres, bare angres';
   end if;
+  new.endret_at := now();
   return new;
 end;
 $$;
