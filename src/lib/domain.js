@@ -68,6 +68,14 @@ export function applyMovement(product, { type, qty, asPack = false }) {
   return { before, after, delta: round3(after - before), units };
 }
 
+/**
+ * Sant når varen har beholdning å vise. Negativ beholdning teller med:
+ * den betyr at noe er ført feil, og å skjule den ville skjult feilen.
+ */
+export function hasStock(product) {
+  return (Number(product?.qty) || 0) !== 0;
+}
+
 /** Sant når varen bør bestilles. */
 export function isLowStock(product) {
   const min = Number(product?.minQty) || 0;

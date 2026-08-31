@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  newProduct, unitsFor, applyMovement, isLowStock, suggestedOrderQty,
+  newProduct, unitsFor, applyMovement, isLowStock, hasStock, suggestedOrderQty,
   scoreProduct, searchProducts, totalValue, countDifferences,
 } from '../src/lib/domain.js';
 
@@ -35,6 +35,20 @@ describe('applyMovement', () => {
 describe('unitsFor', () => {
   it('bruker 1 som kollistørrelse når feltet mangler', () => {
     expect(unitsFor(newProduct('123456'), 3, true)).toBe(3);
+  });
+});
+
+describe('hasStock', () => {
+  it('skjuler varer med beholdning null', () => {
+    expect(hasStock({ qty: 0 })).toBe(false);
+    expect(hasStock({})).toBe(false);
+  });
+  it('viser varer med beholdning', () => {
+    expect(hasStock({ qty: 1 })).toBe(true);
+    expect(hasStock({ qty: 0.5 })).toBe(true);
+  });
+  it('viser negativ beholdning, som er en feil man må se', () => {
+    expect(hasStock({ qty: -3 })).toBe(true);
   });
 });
 

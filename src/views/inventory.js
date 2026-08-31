@@ -1,6 +1,6 @@
 /** Lageroversikt med søk, filter og hurtigjustering. */
 import { el, toast, replace, num, kr, when, modal } from '../ui.js';
-import { searchProducts, isLowStock, totalValue, CATEGORIES, MOVEMENT_TYPES } from '../lib/domain.js';
+import { searchProducts, isLowStock, hasStock, totalValue, CATEGORIES, MOVEMENT_TYPES } from '../lib/domain.js';
 import { formatBarcode, makeInternalBarcode } from '../lib/barcode.js';
 import { allProducts, registerMovement, movementsFor } from '../lib/db.js';
 import { openProductForm } from './product-form.js';
@@ -9,7 +9,7 @@ import { newProduct } from '../lib/domain.js';
 export function inventoryView(app) {
   let products = [];
   let query = '';
-  let filter = 'alle';
+  let filter = 'lager';
 
   const listHost = el('div');
   const statHost = el('div');
@@ -23,6 +23,7 @@ export function inventoryView(app) {
   });
 
   const filters = [
+    { id: 'lager', label: 'På lager' },
     { id: 'alle', label: 'Alle' },
     { id: 'lav', label: 'Må bestilles' },
     ...CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
@@ -42,7 +43,8 @@ export function inventoryView(app) {
 
   function visible() {
     let list = searchProducts(products, query, 500);
-    if (filter === 'lav') list = list.filter(isLowStock);
+    if (filter === 'lager') list = list.filter(hasStock);
+    else if (filter === 'lav') list = list.filter(isLowStock);
     else if (filter !== 'alle') list = list.filter((p) => p.category === filter);
     return list;
   }
@@ -50,7 +52,8 @@ export function inventoryView(app) {
   function renderStats() {
     const low = products.filter(isLowStock).length;
     replace(statHost, el('div.stat-grid', {},
-      el('div.stat', {}, el('div.v', {}, products.length), el('div.k', {}, 'varer')),
+      el('div.stat', {}, el('div.v', {}, products.filter(hasStock).length),
+        el('div.k', {}, `på lager av ${products.length}`)),
       el('div.stat', {}, el('div.v', { style: low ? 'color:var(--warn)' : '' }, low), el('div.k', {}, 'må bestilles')),
       el('div.stat', {}, el('div.v', {}, kr(totalValue(products))), el('div.k', {}, 'lagerverdi'))
     ));
@@ -59,10 +62,14 @@ export function inventoryView(app) {
   function renderList() {
     const list = visible();
     if (!list.length) {
+      const skjult = filter === 'lager' && !query && products.length;
       replace(listHost, el('div.empty', {},
         el('div.big', {}, '📦'),
-        el('div', {}, products.length ? 'Ingen varer passer søket' : 'Registeret er tomt'),
-        el('div.small', {}, products.length ? 'Prøv et annet søkeord.' : 'Skann en strekkode for å legge inn den første varen.')));
+        el('div', {}, skjult ? 'Ingenting på lager'
+          : products.length ? 'Ingen varer passer søket' : 'Registeret er tomt'),
+        el('div.small', {}, skjult
+          ? `${products.length} ${products.length === 1 ? 'vare ligger' : 'varer ligger'} i registeret med beholdning 0. Velg «Alle» for å se dem.`
+          : products.length ? 'Prøv et annet søkeord.' : 'Skann en strekkode for å legge inn den første varen.')));
       return;
     }
     replace(listHost, el('ul.list', {}, ...list.map(row)));

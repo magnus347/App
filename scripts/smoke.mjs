@@ -162,6 +162,44 @@ await page.waitForTimeout(400);
 check('angring markerer bevegelsen',
   (await page.locator('main').innerText()).includes('angret'));
 
+/* --- 9b. Standardvisningen skjuler varer med beholdning 0 ---------- */
+await page.click('.tabbar a[href="#/lager"]');
+await page.waitForTimeout(300);
+
+// Dialoghåndtereren må stå klar før klikket som utløser prompt().
+await page.click('.list li');
+await page.waitForSelector('dialog[open]');
+page.once('dialog', (d) => d.accept('0'));
+await page.click('dialog button:has-text("Korriger beholdning")');
+await page.waitForTimeout(600);
+await page.keyboard.press('Escape');
+await page.waitForTimeout(400);
+
+const paaLager = await page.locator('.stat .v').first().innerText();
+check('statistikken teller 0 på lager', paaLager.trim() === '0', `viste «${paaLager.trim()}»`);
+const nullTekst = await page.locator('main').innerText();
+check('vare med beholdning 0 skjules i standardvisningen', nullTekst.includes('Ingenting på lager'));
+check('tomtilstanden forklarer hvor varen ble av', nullTekst.includes('Velg «Alle»'));
+check('listen er tom i standardvisningen', (await page.locator('.list li').count()) === 0);
+
+await page.click('.chips button:has-text("Alle")');
+await page.waitForTimeout(300);
+check('«Alle» viser varen igjen', (await page.locator('.list li').count()) === 1);
+shots.push(['lager-null', await page.screenshot()]);
+
+// Legg beholdningen tilbake, slik at resten av testen har en vare å se på.
+await page.click('.list li');
+await page.waitForSelector('dialog[open]');
+await page.click('dialog button:has-text("+1 inn")');
+await page.waitForTimeout(500);
+await page.click('.chips button:has-text("På lager")');
+await page.waitForTimeout(300);
+check('varen er tilbake i standardvisningen', (await page.locator('.list li').count()) === 1);
+
+// Tilbake til historikken, som resten av testen fortsetter fra.
+await page.click('.tabbar a[href="#/historikk"]');
+await page.waitForTimeout(300);
+
 /* --- 10. Eksport -------------------------------------------------- */
 const dl = page.waitForEvent('download');
 await page.click('button:has-text("Eksporter")');
