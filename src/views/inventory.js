@@ -1,13 +1,14 @@
 /** Lageroversikt med søk, filter og hurtigjustering. */
 import { el, toast, replace, num, kr, when, modal } from '../ui.js';
-import { searchProducts, isLowStock, hasStock, totalValue, CATEGORIES, MOVEMENT_TYPES } from '../lib/domain.js';
+import { searchProducts, isLowStock, hasStock, totalValue, MOVEMENT_TYPES, kategoriNavn } from '../lib/domain.js';
 import { formatBarcode, makeInternalBarcode } from '../lib/barcode.js';
-import { allProducts, registerMovement, movementsFor } from '../lib/db.js';
+import { allProducts, registerMovement, movementsFor, kategorier } from '../lib/db.js';
 import { openProductForm } from './product-form.js';
 import { newProduct } from '../lib/domain.js';
 
 export function inventoryView(app) {
   let products = [];
+  let kats = [];
   let query = '';
   let filter = 'lager';
 
@@ -22,24 +23,26 @@ export function inventoryView(app) {
     },
   });
 
-  const filters = [
-    { id: 'lager', label: 'På lager' },
-    { id: 'alle', label: 'Alle' },
-    { id: 'lav', label: 'Må bestilles' },
-    ...CATEGORIES.map((c) => ({ id: c.id, label: c.label })),
-  ];
+  const chips = el('div.chips');
 
-  const chips = el('div.chips', {}, ...filters.map((f) =>
-    el('button', {
-      'aria-pressed': String(f.id === filter),
-      onclick: (ev) => {
-        filter = f.id;
-        chips.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', 'false'));
-        ev.currentTarget.setAttribute('aria-pressed', 'true');
-        renderList();
-      },
-    }, f.label)
-  ));
+  function tegnFiltre() {
+    const filters = [
+      { id: 'lager', label: 'På lager' },
+      { id: 'alle', label: 'Alle' },
+      { id: 'lav', label: 'Må bestilles' },
+      ...kats.map((c) => ({ id: c.id, label: c.label })),
+    ];
+    replace(chips, ...filters.map((f) =>
+      el('button', {
+        'aria-pressed': String(f.id === filter),
+        onclick: () => {
+          filter = f.id;
+          tegnFiltre();
+          renderList();
+        },
+      }, f.label)
+    ));
+  }
 
   function visible() {
     let list = searchProducts(products, query, 500);
@@ -80,7 +83,8 @@ export function inventoryView(app) {
       el('div.grow', {},
         el('div.title.truncate', {}, p.name),
         el('div.sub.truncate', {},
-          [formatBarcode(p.barcode), p.supplier, p.location].filter(Boolean).join(' · '))
+          [kategoriNavn(kats, p.category), formatBarcode(p.barcode), p.supplier, p.location]
+            .filter(Boolean).join(' · '))
       ),
       isLowStock(p) && el('span.tag.low', {}, 'Bestill'),
       el('div.qty', {}, num(p.qty), el('span.unit', {}, p.unit))
@@ -148,7 +152,8 @@ export function inventoryView(app) {
   }
 
   async function reload() {
-    products = await allProducts();
+    [products, kats] = await Promise.all([allProducts(), kategorier()]);
+    tegnFiltre();
     renderStats();
     renderList();
     app.refreshBadges();

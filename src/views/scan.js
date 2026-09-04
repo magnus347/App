@@ -5,7 +5,7 @@
 import { el, icon, toast, replace, num, when } from '../ui.js';
 import { BarcodeScanner, hasCameraSupport, buzz, beep } from '../lib/scanner.js';
 import { normalizeBarcode, isStorableBarcode, formatBarcode } from '../lib/barcode.js';
-import { getProduct, registerMovement, undoMovement, getSetting, setSetting } from '../lib/db.js';
+import { getProduct, registerMovement, undoMovement, getSetting, setSetting, kategorier, saveProduct } from '../lib/db.js';
 import { newProduct, MOVEMENT_TYPES } from '../lib/domain.js';
 import { openProductForm } from './product-form.js';
 import { suggestFromCatalog } from '../lib/catalog.js';
@@ -19,8 +19,8 @@ const MODES = [
 
 export function scanView(app) {
   let mode = app.state.mode || 'inn';
-  let quick = true;
   let sound = true;
+  let kategoriliste = [];
   let scanner = null;
   let busy = false;
 
@@ -141,13 +141,9 @@ export function scanView(app) {
 
     try {
       const product = await getProduct(code);
-      if (!product) {
-        await handleUnknown(code);
-      } else if (quick && mode !== 'telling') {
-        await commit(product, 1, false);
-      } else {
-        showQtyCard(product);
-      }
+      if (!product) await handleUnknown(code);
+      // Hvert skann bekreftes: navnet vises, og antallet skal godkjennes.
+      else showQtyCard(product);
     } catch (err) {
       toast(err.message, 'err');
     } finally {
@@ -179,11 +175,19 @@ export function scanView(app) {
 
   /* ------------------------------------------------ antall og bokføring */
 
+  /**
+   * Bekreftelsesvinduet: viser hvilken vare som ble skannet, og lar antallet
+   * godkjennes før noe bokføres. Ved innregistrering kan kategorien velges
+   * på stedet, så varen havner der den hører hjemme med én gang.
+   */
   function showQtyCard(product, { fresh = false } = {}) {
+    let valgtKategori = product.category || 'mat';
+
     const qtyInput = el('input', {
       type: 'number', step: 'any', inputmode: 'decimal',
       value: mode === 'telling' ? String(product.qty ?? 0) : '1',
     });
+
     const packToggle = el('button.small', {
       'aria-pressed': 'false',
       onclick: (ev) => {
@@ -197,29 +201,61 @@ export function scanView(app) {
       qtyInput.value = String(Math.max(0, (Number(qtyInput.value) || 0) + d));
     };
 
-    const doCommit = () =>
-      commit(product, Number(qtyInput.value), packToggle.getAttribute('aria-pressed') === 'true');
+    // Kategorivelger, bare ved innregistrering.
+    const kategoriChips = el('div.chips');
+    function tegnKategorier() {
+      replace(kategoriChips, ...kategoriliste.map((k) =>
+        el('button', {
+          'aria-pressed': String(k.id === valgtKategori),
+          onclick: () => {
+            valgtKategori = k.id;
+            tegnKategorier();
+          },
+        }, k.label)));
+    }
+    if (mode === 'inn') tegnKategorier();
+
+    const doCommit = async () => {
+      // Endret kategori lagres på varekortet før bevegelsen bokføres.
+      if (mode === 'inn' && valgtKategori !== product.category) {
+        try {
+          product = await saveProduct({ ...product, category: valgtKategori });
+        } catch (err) {
+          toast(err.message, 'err');
+        }
+      }
+      await commit(product, Number(qtyInput.value),
+        packToggle.getAttribute('aria-pressed') === 'true');
+    };
 
     renderResult(el('div.card.stack', {},
       el('div.row', {},
         el('div.grow', {},
-          el('div', { style: 'font-weight:650' }, product.name),
-          el('div.small.muted', {}, `${formatBarcode(product.barcode)}${product.location ? ` · ${product.location}` : ''}`)
+          el('div', { style: 'font-weight:650;font-size:1.05rem' }, product.name),
+          el('div.small.muted', {},
+            `${formatBarcode(product.barcode)}${product.location ? ` · ${product.location}` : ''}`)
         ),
         el('div.qty', {}, num(product.qty), el('span.unit', {}, product.unit))
       ),
-      fresh && el('div.small', { style: 'color:var(--inn)' }, 'Varen er lagret og gjenkjennes neste gang.'),
+      fresh && el('div.small', { style: 'color:var(--inn)' },
+        'Varen er lagret og gjenkjennes neste gang.'),
+
+      mode === 'inn' && kategoriliste.length > 1 && el('div', {},
+        el('label', {}, 'Kategori'),
+        kategoriChips),
+
+      el('label', {}, mode === 'telling' ? 'Talt antall' : 'Antall'),
       el('div.stepper', {},
         el('button', { onclick: step(-1), 'aria-label': 'Minus én' }, '−'),
         qtyInput,
         el('button', { onclick: step(1), 'aria-label': 'Pluss én' }, '+')
       ),
       product.packSize > 1 && el('div.row', {}, packToggle),
-      el('button.wide', {
-        class: mode, onclick: doCommit,
-      }, mode === 'telling'
-        ? `Sett beholdning til ${num(qtyInput.value)}`
-        : `Registrer ${MODES.find((m) => m.id === mode).label.toLowerCase()}`),
+
+      el('button.wide', { class: mode, onclick: doCommit },
+        mode === 'telling' ? 'Bekreft telling'
+          : mode === 'inn' ? 'Bekreft inn' : 'Bekreft ut'),
+
       el('button.ghost.wide.small', {
         onclick: async () => {
           const upd = await openProductForm(product);
@@ -228,7 +264,7 @@ export function scanView(app) {
       }, 'Rediger varekort')
     ));
 
-    if (mode === 'telling') setTimeout(() => qtyInput.select?.(), 60);
+    setTimeout(() => qtyInput.select?.(), 60);
   }
 
   async function commit(product, qty, asPack) {
@@ -289,16 +325,6 @@ export function scanView(app) {
 
   /* ------------------------------------------------------------- skjerm */
 
-  const quickToggle = el('button.small', {
-    'aria-pressed': 'true',
-    onclick: (ev) => {
-      quick = !quick;
-      ev.currentTarget.setAttribute('aria-pressed', String(quick));
-      ev.currentTarget.textContent = quick ? 'Hurtig: +1 per skann' : 'Spør om antall';
-      setSetting('hurtig', quick);
-    },
-  }, 'Hurtig: +1 per skann');
-
   const soundToggle = el('button.small', {
     'aria-pressed': 'true',
     onclick: (ev) => {
@@ -322,7 +348,7 @@ export function scanView(app) {
         onScan(v);
       },
     }, el('div.grow', {}, manualInput), el('button.primary', { type: 'submit' }, icon('sok'))),
-    el('div.chips', {}, quickToggle, soundToggle),
+    el('div.chips', {}, soundToggle),
     resultHost
   );
 
@@ -333,10 +359,8 @@ export function scanView(app) {
     el('div.small', {}, 'Ukjente varer kan registreres på stedet.')));
 
   (async () => {
-    quick = await getSetting('hurtig', true);
+    kategoriliste = await kategorier();
     sound = await getSetting('lyd', true);
-    quickToggle.setAttribute('aria-pressed', String(quick));
-    quickToggle.textContent = quick ? 'Hurtig: +1 per skann' : 'Spør om antall';
     soundToggle.setAttribute('aria-pressed', String(sound));
     soundToggle.textContent = sound ? 'Lyd på' : 'Lyd av';
     await startCamera();

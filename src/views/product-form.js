@@ -6,9 +6,9 @@
  * alltid etterpå.
  */
 import { el, modal, toast, icon, confirmDialog } from '../ui.js';
-import { CATEGORIES, UNITS, SUPPLIERS } from '../lib/domain.js';
+import { UNITS, SUPPLIERS } from '../lib/domain.js';
 import { formatBarcode, originHint, normalizeBarcode } from '../lib/barcode.js';
-import { saveProduct, deleteProduct, allProducts } from '../lib/db.js';
+import { saveProduct, deleteProduct, allProducts, kategorier } from '../lib/db.js';
 
 /**
  * Åpner skjemaet. `product` kan være et eksisterende varekort eller
@@ -17,6 +17,7 @@ import { saveProduct, deleteProduct, allProducts } from '../lib/db.js';
  */
 export async function openProductForm(product, { title, suggested = false } = {}) {
   const known = await allProducts();
+  const kats = await kategorier();
   // Varen er ny hvis strekkoden ikke ligger i registeret fra før. Feltene på
   // objektet duger ikke som signal: et ferskt varekort har også createdAt.
   const isNew = !known.some((p) => p.barcode === normalizeBarcode(product.barcode));
@@ -38,8 +39,15 @@ export async function openProductForm(product, { title, suggested = false } = {}
       id: 'f-desc', value: product.description || '',
       placeholder: 'Beskrivelse appen husker: variant, størrelse, hvor den brukes …',
     });
+    // Har varen en kategori som er fjernet fra listen, beholdes den som
+    // valg, slik at redigering av navnet ikke stilltiende flytter varen.
+    const katValg = kats.some((c) => c.id === product.category) || !product.category
+      ? kats
+      : [...kats, { id: product.category, label: `${product.category} (fjernet)` }];
     f.category = el('select', { id: 'f-cat' },
-      ...CATEGORIES.map((c) => el('option', { value: c.id, selected: (product.category || 'mat') === c.id }, c.label)));
+      ...katValg.map((c) => el('option', {
+        value: c.id, selected: (product.category || kats[0]?.id || 'mat') === c.id,
+      }, c.label)));
     f.unit = el('input', {
       id: 'f-unit', value: product.unit || 'stk', list: 'dl-units', placeholder: 'stk', autocomplete: 'off',
     });

@@ -3,12 +3,39 @@
  * kan testes isolert.
  */
 
-export const CATEGORIES = [
-  { id: 'mat', label: 'Mat' },
+/**
+ * Kategoriene man starter med. Brukeren kan endre navn, legge til egne og
+ * fjerne dem som ikke brukes – se `kategorier()` i db.js.
+ *
+ * Id-ene endres aldri: varedatabasen på 24 594 varer er merket med dem, og
+ * bytter vi id, mister de importerte varene kategorien sin. Etiketten er
+ * derimot fri, så «Mat» kan hete «Kjøkken» uten at noe brekker.
+ */
+export const DEFAULT_CATEGORIES = [
+  { id: 'mat', label: 'Kjøkken' },
+  { id: 'forbruk', label: 'Forbruksvarer' },
   { id: 'drikke', label: 'Drikke' },
-  { id: 'forbruk', label: 'Forbruksmateriell' },
   { id: 'annet', label: 'Annet' },
 ];
+
+/** Bakoverkompatibelt navn, brukt der en fast liste holder. */
+export const CATEGORIES = DEFAULT_CATEGORIES;
+
+/** Lager en id for en egendefinert kategori, utledet av navnet. */
+export function kategoriId(label, eksisterende = []) {
+  const base = String(label).toLowerCase().trim()
+    .replace(/æ/g, 'ae').replace(/ø/g, 'oe').replace(/å/g, 'aa')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'kategori';
+  let id = base;
+  let n = 2;
+  while (eksisterende.some((k) => k.id === id)) id = `${base}-${n++}`;
+  return id;
+}
+
+/** Etiketten for en kategori-id, med id-en selv som reserve. */
+export function kategoriNavn(kategorier, id) {
+  return kategorier.find((k) => k.id === id)?.label || id || 'Ukjent';
+}
 
 export const UNITS = ['stk', 'pk', 'kolli', 'kg', 'g', 'l', 'dl', 'rull', 'eske', 'flaske'];
 

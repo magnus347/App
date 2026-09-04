@@ -1,8 +1,8 @@
 /** Sikkerhetskopi, import/eksport og informasjon om appen. */
-import { el, toast, confirmDialog, kr } from '../ui.js';
-import { allProducts, exportAll, importAll, recentMovements } from '../lib/db.js';
+import { el, toast, confirmDialog, replace, kr } from '../ui.js';
+import { allProducts, exportAll, importAll, recentMovements, kategorier, settKategorier, antallPerKategori } from '../lib/db.js';
 import { normalizeBarcode, isStorableBarcode, makeInternalBarcode } from '../lib/barcode.js';
-import { totalValue, CATEGORIES } from '../lib/domain.js';
+import { totalValue, kategoriId } from '../lib/domain.js';
 import { toCsv, fromCsv, download, stamp } from '../lib/csv.js';
 import { loadCatalog, catalogCount, clearCatalog } from '../lib/catalog.js';
 import { skyKort } from './sky.js';
@@ -60,6 +60,7 @@ export function settingsView(app) {
       }
       return '';
     };
+    const kats = await kategorier();
     const products = [];
     let hoppet = 0;
     for (const row of rows) {
@@ -75,7 +76,7 @@ export function settingsView(app) {
         barcode,
         name: name || barcode,
         description: pick(row, 'beskrivelse', 'notat'),
-        category: CATEGORIES.find((c) => c.id === cat || c.label.toLowerCase() === cat)?.id || 'annet',
+        category: kats.find((c) => c.id === cat || c.label.toLowerCase() === cat)?.id || 'annet',
         unit: pick(row, 'enhet') || 'stk',
         supplier: pick(row, 'leverandor', 'leverandør', 'grossist'),
         location: pick(row, 'plassering', 'hylle', 'lokasjon'),
@@ -139,8 +140,75 @@ export function settingsView(app) {
 
   const sky = skyKort(app);
 
+  /* --------------------------------------------------------- kategorier */
+
+  const katListe = el('ul.list');
+
+  async function tegnKategorier2() {
+    const [kats, antall] = await Promise.all([kategorier(), antallPerKategori()]);
+    replace(katListe, ...kats.map((k, i) =>
+      el('li', {},
+        el('div.grow', {},
+          el('div.title', {}, k.label),
+          el('div.sub', {}, `${antall[k.id] || 0} varer`)
+        ),
+        el('button.small.ghost', {
+          title: 'Endre navn',
+          onclick: async () => {
+            const nytt = prompt('Nytt navn på kategorien:', k.label);
+            if (!nytt?.trim()) return;
+            const oppdatert = kats.map((x) => (x.id === k.id ? { ...x, label: nytt.trim() } : x));
+            await settKategorier(oppdatert);
+            toast('Kategorien er endret', 'ok');
+            await tegnKategorier2();
+            app.refreshAll?.();
+          },
+        }, 'Endre'),
+        el('button.small.ghost', {
+          title: 'Fjern',
+          onclick: async () => {
+            const brukt = antall[k.id] || 0;
+            const ok = await confirmDialog(`Fjerne «${k.label}»?`,
+              brukt
+                ? `${brukt} ${brukt === 1 ? 'vare bruker' : 'varer bruker'} kategorien. De blir stående uten kategori til du gir dem en ny – ingen varer slettes.`
+                : 'Kategorien er ikke i bruk.',
+              { okText: 'Fjern', danger: true });
+            if (!ok) return;
+            try {
+              await settKategorier(kats.filter((x) => x.id !== k.id));
+              toast('Kategorien er fjernet', 'ok');
+              await tegnKategorier2();
+              app.refreshAll?.();
+            } catch (err) {
+              toast(err.message, 'err');
+            }
+          },
+        }, '✕'),
+        void i
+      )));
+  }
+
   const root = el('div.stack', {},
     el('div.card', {}, el('h2', {}, 'Status'), info),
+
+    el('div.card.stack', {},
+      el('h2', {}, 'Kategorier'),
+      el('p.small.muted', { style: 'margin:0' },
+        'Inndelingen du velger mellom når du skanner varer inn. Gi dem navnene dere bruker til daglig.'),
+      katListe,
+      el('button.wide.small', {
+        onclick: async () => {
+          const navn = prompt('Navn på ny kategori:', '');
+          if (!navn?.trim()) return;
+          const kats = await kategorier();
+          await settKategorier([...kats, { id: kategoriId(navn, kats), label: navn.trim() }]);
+          toast('Kategorien er lagt til', 'ok');
+          await tegnKategorier2();
+          app.refreshAll?.();
+        },
+      }, 'Legg til kategori')
+    ),
+
     sky.kort,
 
     el('div.card.stack', {},
@@ -215,11 +283,13 @@ export function settingsView(app) {
 
   reload();
   tegnKatalog();
+  tegnKategorier2();
   return {
     root,
     refresh: async () => {
       await reload();
       await tegnKatalog();
+      await tegnKategorier2();
       await sky.tegn();
     },
   };

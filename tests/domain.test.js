@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   newProduct, unitsFor, applyMovement, isLowStock, hasStock, suggestedOrderQty,
   scoreProduct, searchProducts, totalValue, countDifferences,
+  kategoriId, kategoriNavn, DEFAULT_CATEGORIES,
 } from '../src/lib/domain.js';
 
 const melk = () => newProduct('7038010000188', { name: 'Lettmelk 1L', category: 'drikke', unit: 'l', packSize: 12, qty: 10, minQty: 6 });
@@ -117,5 +118,34 @@ describe('countDifferences', () => {
   });
   it('ignorerer talte varer som ikke finnes i registeret', () => {
     expect(countDifferences(varer, { 999999: 5 })).toHaveLength(0);
+  });
+});
+
+describe('kategoriId', () => {
+  it('lager id fra navnet, uten norske tegn', () => {
+    expect(kategoriId('Kjøkken')).toBe('kjoekken');
+    expect(kategoriId('Tørrvarer og bakst')).toBe('toerrvarer-og-bakst');
+    expect(kategoriId('Rå fisk')).toBe('raa-fisk');
+  });
+  it('unngår kollisjon med eksisterende id-er', () => {
+    const finnes = [{ id: 'kjoekken' }, { id: 'kjoekken-2' }];
+    expect(kategoriId('Kjøkken', finnes)).toBe('kjoekken-3');
+  });
+  it('takler navn uten brukbare tegn', () => {
+    expect(kategoriId('!!!')).toBe('kategori');
+  });
+});
+
+describe('kategoriNavn', () => {
+  const kats = [{ id: 'mat', label: 'Kjøkken' }, { id: 'forbruk', label: 'Forbruksvarer' }];
+  it('finner etiketten', () => {
+    expect(kategoriNavn(kats, 'forbruk')).toBe('Forbruksvarer');
+  });
+  it('faller tilbake på id-en for kategorier som er fjernet', () => {
+    // Varen skal ikke bli navnløs fordi kategorien ble slettet.
+    expect(kategoriNavn(kats, 'drikke')).toBe('drikke');
+  });
+  it('takler manglende kategori', () => {
+    expect(kategoriNavn(kats, undefined)).toBe('Ukjent');
   });
 });

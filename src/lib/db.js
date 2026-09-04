@@ -2,7 +2,7 @@
  * IndexedDB-lag. All data ligger lokalt på enheten slik at appen fungerer
  * uten nett ute i lageret.
  */
-import { newProduct, applyMovement, round3 } from './domain.js';
+import { newProduct, applyMovement, round3, DEFAULT_CATEGORIES } from './domain.js';
 import { foldMovements } from './sync-logic.js';
 import { normalizeBarcode } from './barcode.js';
 
@@ -298,6 +298,32 @@ export async function clearCatalog() {
   const db = await openDb();
   if (!db.objectStoreNames.contains('catalog')) return;
   await tx(['catalog'], 'readwrite', (t) => wrap(t.objectStore('catalog').clear()));
+}
+
+/* ---------------------------------------------------------- kategorier */
+
+/** Kategoriene brukeren har satt opp, eller standardoppsettet. */
+export async function kategorier() {
+  const lagret = await getSetting('kategorier', null);
+  if (Array.isArray(lagret) && lagret.length) return lagret;
+  return DEFAULT_CATEGORIES;
+}
+
+/** Lagrer kategorilisten. Minst én kategori må stå igjen. */
+export async function settKategorier(liste) {
+  const rene = (liste || [])
+    .filter((k) => k && k.id && String(k.label || '').trim())
+    .map((k) => ({ id: k.id, label: String(k.label).trim() }));
+  if (!rene.length) throw new Error('Du må ha minst én kategori');
+  return setSetting('kategorier', rene);
+}
+
+/** Antall varer per kategori-id, brukt før man fjerner en kategori. */
+export async function antallPerKategori() {
+  const varer = await allProducts();
+  const kart = {};
+  for (const p of varer) kart[p.category] = (kart[p.category] || 0) + 1;
+  return kart;
 }
 
 /* -------------------------------------------------------- synkronisering */

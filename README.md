@@ -14,7 +14,8 @@ appen fungerer uten nett når den er lagt til på hjemskjermen.
 | --- | --- |
 | **Skanning** | Kamera leser EAN-13/EAN-8/UPC/Code 128/Code 39/ITF/QR. Bruker nettleserens innebygde `BarcodeDetector` når den finnes, ellers ZXing – som dekker Safari på iPhone. |
 | **Inn / Ut / Telling** | Tre moduser. Inn og ut endrer beholdningen relativt, telling setter den absolutt. |
-| **Hurtigmodus** | +1 per skann uten å taste noe – for rask inn- eller utregistrering av mange varer. |
+| **Bekreftelse på hvert skann** | Skanning åpner et vindu med varenavn og antall som må godkjennes, både inn og ut. Ingenting bokføres før du bekrefter. |
+| **Kategorier du styrer selv** | Legg til, gi nytt navn til og fjern kategorier under *Mer → Kategorier*. Ved innskanning velger du kategori direkte i bekreftelsesvinduet. |
 | **Ukjente varer** | Skjema åpnes automatisk ved ny strekkode. Navn, beskrivelse, kategori, enhet, kolli, leverandør, plassering, minimumsbeholdning og pris lagres på strekkoden. |
 | **Kolli** | Registrer «2 kolli à 12» i stedet for å telle enkeltenheter. |
 | **Bestillingsliste** | Varer på eller under minimumsbeholdning samles automatisk, gruppert etter leverandør (Norengros, Asko, Kiwi …), med forslag om hele kolli. Deles som tekst eller lastes ned som CSV. |
@@ -49,9 +50,10 @@ fullskjerm og uten nett.
 
 ## Slik brukes den til daglig
 
-1. **Varemottak:** velg *Inn*, skann alt som pakkes ut. Har du hele kolli, slå på
-   kolli-knappen og tast antall kolli.
-2. **Uttak:** velg *Ut* og skann det som tas ut av lageret.
+1. **Varemottak:** velg *Inn*, skann alt som pakkes ut. Bekreftelsesvinduet viser
+   varenavnet, lar deg velge kategori og godkjenne antallet. Har du hele kolli, slå
+   på kolli-knappen og tast antall kolli.
+2. **Uttak:** velg *Ut* og skann det som tas ut av lageret. Bekreft antallet.
 3. **Varetelling:** velg *Telling* og skann hylle for hylle – tast det du faktisk
    teller, så settes beholdningen til den verdien.
 4. **Bestilling:** fanen *Bestilling* viser alt som ligger på eller under
@@ -133,7 +135,7 @@ sikkerhetskopi med beholdning og historikk.
 ## Tester
 
 ```bash
-npm test                          # 108 enhetstester: strekkoder, domene, database, katalog, CSV, fletting
+npm test                          # 120 enhetstester: strekkoder, domene, database, katalog, CSV, fletting
 node scripts/smoke.mjs            # ende-til-ende i ekte nettleser
 node scripts/kamera-test.mjs      # dekoding fra kamera (ZXing-veien, som på iPhone)
 node scripts/kamera-test.mjs --nativ   # dekoding via innebygd BarcodeDetector (Android)

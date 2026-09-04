@@ -276,3 +276,42 @@ describe('oppgradering fra versjon 2', () => {
     expect((await db.getProduct(melk.barcode)).qty).toBe(7);
   });
 });
+
+describe('kategorier', () => {
+  it('starter med standardoppsettet', async () => {
+    const k = await db.kategorier();
+    expect(k.map((x) => x.label)).toContain('Kjøkken');
+    expect(k.map((x) => x.label)).toContain('Forbruksvarer');
+  });
+
+  it('lagrer egne kategorier', async () => {
+    await db.settKategorier([{ id: 'mat', label: 'Kjøkkenet' }, { id: 'toerr', label: 'Tørrvarer' }]);
+    const k = await db.kategorier();
+    expect(k).toHaveLength(2);
+    expect(k[0].label).toBe('Kjøkkenet');
+  });
+
+  it('avviser tom liste', async () => {
+    await expect(db.settKategorier([])).rejects.toThrow('minst én kategori');
+  });
+
+  it('luker bort oppføringer uten navn eller id', async () => {
+    await db.settKategorier([{ id: 'a', label: 'Gyldig' }, { id: '', label: 'X' }, { id: 'b', label: '  ' }]);
+    expect(await db.kategorier()).toEqual([{ id: 'a', label: 'Gyldig' }]);
+  });
+
+  it('teller varer per kategori', async () => {
+    await db.saveProduct({ ...melk, category: 'drikke' });
+    await db.saveProduct({ barcode: '1234567', name: 'Tørkepapir', category: 'forbruk' });
+    const antall = await db.antallPerKategori();
+    expect(antall).toEqual({ drikke: 1, forbruk: 1 });
+  });
+
+  it('sletter ikke varer når en kategori fjernes', async () => {
+    await db.saveProduct({ ...melk, category: 'drikke' });
+    await db.settKategorier([{ id: 'mat', label: 'Kjøkken' }]);
+    const p = await db.getProduct(melk.barcode);
+    expect(p.category).toBe('drikke');
+    expect(await db.allProducts()).toHaveLength(1);
+  });
+});

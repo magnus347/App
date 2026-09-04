@@ -67,25 +67,41 @@ check('varen er lagret og antallskortet vises',
 /* --- 2. Registrer inn 2 kolli ------------------------------------- */
 await page.click('button[aria-pressed="false"]:has-text("Enkeltenheter")');
 await page.fill('.stepper input', '2');
-await page.click('button.wide:has-text("Registrer inn")');
+await page.click('button.wide:has-text("Bekreft inn")');
 await page.waitForTimeout(200);
 check('2 kolli à 12 gir 24 på lager',
   (await page.locator('main').innerText()).includes('24'));
 
-/* --- 3. Samme kode igjen: gjenkjennes, hurtigmodus +1 -------------- */
+/* --- 3. Samme kode igjen: bekreftelsesvindu med navn og antall ----- */
 await page.fill('input[placeholder="Tast strekkode manuelt"]', '7038010000188');
 await page.press('input[placeholder="Tast strekkode manuelt"]', 'Enter');
-await page.waitForTimeout(300);
-const etterHurtig = await page.locator('main').innerText();
+await page.waitForTimeout(400);
 check('kjent kode gjenkjennes uten skjema', !(await page.locator('dialog[open]').count()));
-check('hurtigmodus legger til 1 (25)', etterHurtig.includes('25'));
+const bekreftTekst = await page.locator('main').innerText();
+check('bekreftelsesvinduet viser varenavnet', bekreftTekst.includes('Lettmelk 1L Tine'));
+check('bekreftelsesvinduet ber om antall', bekreftTekst.includes('Antall'));
+check('ingenting bokføres før bekreftelse', bekreftTekst.includes('24'));
+check('kategorivalg vises ved innskanning',
+  bekreftTekst.includes('Kategori') && bekreftTekst.includes('Forbruksvarer'));
+shots.push(['bekreft-inn', await page.screenshot()]);
+
+// Velg en annen kategori, og bekreft.
+await page.click('.chips button:has-text("Forbruksvarer")');
+await page.click('button.wide:has-text("Bekreft inn")');
+await page.waitForTimeout(400);
+check('bekreftet inn legger til 1 (25)', (await page.locator('main').innerText()).includes('25'));
 
 /* --- 4. Ut-modus -------------------------------------------------- */
 await page.click('.modes button:has-text("Ut")');
 await page.fill('input[placeholder="Tast strekkode manuelt"]', '7038010000188');
 await page.press('input[placeholder="Tast strekkode manuelt"]', 'Enter');
-await page.waitForTimeout(300);
-check('ut trekker fra (24)', (await page.locator('main').innerText()).includes('24'));
+await page.waitForSelector('button.wide:has-text("Bekreft ut")');
+const utTekst = await page.locator('main').innerText();
+check('ut krever også bekreftelse', utTekst.includes('Lettmelk 1L Tine'));
+check('kategorivalg vises ikke ved uttak', !utTekst.includes('Kategori'));
+await page.click('button.wide:has-text("Bekreft ut")');
+await page.waitForTimeout(400);
+check('bekreftet ut trekker fra (24)', (await page.locator('main').innerText()).includes('24'));
 
 /* --- 5. Telling setter absolutt beholdning ------------------------ */
 await page.click('.modes button:has-text("Telling")');
@@ -93,7 +109,7 @@ await page.fill('input[placeholder="Tast strekkode manuelt"]', '7038010000188');
 await page.press('input[placeholder="Tast strekkode manuelt"]', 'Enter');
 await page.waitForSelector('.stepper input');
 await page.fill('.stepper input', '5');
-await page.click('button.wide:has-text("Sett beholdning")');
+await page.click('button.wide:has-text("Bekreft telling")');
 await page.waitForTimeout(200);
 const teltTekst = await page.locator('main').innerText();
 check('telling setter beholdning til 5', teltTekst.includes('5'));
@@ -152,7 +168,7 @@ shots.push(['bestilling', await page.screenshot()]);
 await page.click('.tabbar a[href="#/historikk"]');
 await page.waitForTimeout(300);
 const antallBevegelser = await page.locator('.list li').count();
-check('historikken viser alle 5 bevegelsene', antallBevegelser === 5, `fant ${antallBevegelser}`);
+check('historikken viser alle bevegelsene', antallBevegelser === 5, `fant ${antallBevegelser}`);
 shots.push(['historikk', await page.screenshot()]);
 
 await page.click('.list li button:has-text("Angre")');
@@ -243,6 +259,37 @@ await page.click('button:has-text("Last ned sikkerhetskopi")');
 const backup = await dl2;
 check('sikkerhetskopi lastes ned', backup.suggestedFilename().endsWith('.json'));
 shots.push(['innstillinger', await page.screenshot()]);
+
+/* --- 11a. Kategorier kan styres av brukeren ------------------------ */
+await page.click('.tabbar a[href="#/innstillinger"]');
+await page.waitForTimeout(400);
+const katTekst2 = await page.locator('main').innerText();
+check('kategoriene kan styres i innstillinger',
+  katTekst2.includes('Kategorier') && katTekst2.includes('Kjøkken') && katTekst2.includes('Forbruksvarer'));
+check('viser hvor mange varer hver kategori har', /\d+ varer/.test(katTekst2));
+shots.push(['kategorier', await page.screenshot()]);
+
+// Legg til en egen kategori og se at den dukker opp som filter.
+page.once('dialog', (d) => d.accept('Tørrvarer'));
+await page.click('button:has-text("Legg til kategori")');
+await page.waitForTimeout(600);
+check('ny kategori legges til',
+  (await page.locator('main').innerText()).includes('Tørrvarer'));
+
+await page.click('.tabbar a[href="#/lager"]');
+await page.waitForTimeout(400);
+check('ny kategori blir filter i lageret',
+  (await page.locator('.chips button:has-text("Tørrvarer")').count()) === 1);
+
+// Den skal også være valgbar ved innskanning.
+await page.click('.tabbar a[href="#/skann"]');
+await page.waitForTimeout(300);
+await page.click('.modes button:has-text("Inn")');
+await page.fill('input[placeholder="Tast strekkode manuelt"]', '7038010000188');
+await page.press('input[placeholder="Tast strekkode manuelt"]', 'Enter');
+await page.waitForSelector('button.wide:has-text("Bekreft inn")');
+check('ny kategori kan velges ved skanning',
+  (await page.locator('.chips button:has-text("Tørrvarer")').count()) === 1);
 
 /* --- 11b. Skylagring: oppsett uten at appen krever det ------------- */
 await page.click('.tabbar a[href="#/innstillinger"]');
